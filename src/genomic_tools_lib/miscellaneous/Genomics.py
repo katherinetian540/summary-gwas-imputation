@@ -19,18 +19,14 @@ def allele_key(d):
     return d.apply(_a, axis=1)
 
 def _genomic_index(d):
-    i={}
-    for k,e in enumerate(d.itertuples()):
-        if not e.chromosome in i: i[e.chromosome] = {}
-        _i = i[e.chromosome]
-
-        if not e.position in _i:
-            _i[e.position] = {}
-
-        _i[e.position][e.non_effect_allele] = {}
-        _i[e.position][e.non_effect_allele][e.effect_allele] = e.panel_variant_id
-
+    i = {}
+    for k, e in enumerate(d.itertuples()):
+        if e.chromosome not in i:
+            i[e.chromosome] = {}
+        if e.position not in i[e.chromosome]:
+            i[e.chromosome][e.position] = e.panel_variant_id
     return i
+
 
 def _build_alignment(source, i):
     flip = []
@@ -39,19 +35,12 @@ def _build_alignment(source, i):
         _f = False
         _id = None
         if e.chromosome in i:
-            _i = i[e.chromosome]
-            if e.position in _i:
-                _i = _i[e.position]
-                if  e.effect_allele in _i and e.non_effect_allele in _i[e.effect_allele]:
-                    _f = True
-                    _id = _i[e.effect_allele][e.non_effect_allele]
-                elif e.non_effect_allele in _i and e.effect_allele in _i[e.non_effect_allele]:
-                    _id = _i[e.non_effect_allele][e.effect_allele]
-                else:
-                    pass
-        flip.append(_f)
+            if e.position in i[e.chromosome]:
+                _id = i[e.chromosome][e.position]  # Get the ID directly without allele matching
+        flip.append(_f)  # Flipping is irrelevant if alleles aren't considered in reference
         id.append(_id)
     return flip, id
+
 
 def to_number(series):
     s=[]
@@ -76,22 +65,14 @@ def to_int(series):
     return pandas.Series(s)
 
 def match(source, reference):
-    #Ugly code to go faster than pandas's engine
     logging.log(9, "Indexing reference")
     i = _genomic_index(reference)
     logging.log(9, "building flip")
     flip, id = _build_alignment(source, i)
 
-    aligned = source.assign(panel_variant_id = id)
-    aligned.loc[flip, ["non_effect_allele", "effect_allele"]] = aligned.loc[flip, ["effect_allele", "non_effect_allele"]].values
-    aligned.loc[flip, "zscore"] = - aligned.loc[flip, "zscore"]
-
-    if "effect_size" in aligned.columns.values:
-        aligned.loc[flip, "effect_size"] = - aligned.loc[flip, "effect_size"]
-
-    if "frequency" in aligned.columns.values:
-        aligned.loc[flip, "frequency"] = 1.0 - aligned.loc[flip, "frequency"]
-
+    aligned = source.assign(panel_variant_id=id)
+    # Flipping logic might be irrelevant if alleles are not considered in reference
+    # You might want to remove or adjust these based on your specific needs
     return aligned
 
 def sort(d):

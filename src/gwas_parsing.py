@@ -57,7 +57,6 @@ def pre_process_gwas(args, d):
         elif "sample_size" in d:
             logging.info("difference to cases")
             d["n_cases"] = d.sample_size - d.n_controls
-
     return d
 
 def metadata_white_list(black_list_path, column, variants):
@@ -112,18 +111,16 @@ def liftover(args, d):
     return d
 
 def _get_panel_metadata(path, index):
-    m=[]
+    m = []
     for i, line in Utilities.iterate_file(path):
-        if i==0: continue
+        if i == 0:
+            continue
         comps = line.strip().split()
-        variant = comps[0]
-        chr = comps[1]
+        chr = comps[0] 
         pos = int(comps[2])
-        non_effect = comps[3]
-        effect = comps[4]
-        frequency = float(comps[5])
+        variant = comps[1]
         if chr in index and pos in index[chr]:
-            m.append((variant, chr, pos, non_effect, effect, frequency))
+            m.append((variant, chr, pos))
     return m
 
 def _get_metadata(path, index):
@@ -131,22 +128,20 @@ def _get_metadata(path, index):
     for i, line in Utilities.iterate_file(path):
         if i==0: continue
         comps = line.strip().split()
-        chr = "chr"+comps[0]
-        pos = int(comps[1])
-        variant = comps[2]
-        non_effect = comps[3]
-        effect = comps[4]
-        frequency = float(comps[5]) if comps[5] != "NA" else numpy.nan
+        chr = comps[0]
+        pos = int(comps[2])
+        variant = comps[1]
         if chr in index and pos in index[chr]:
-            m.append((variant, chr, pos, non_effect, effect, frequency))
+            m.append((variant, chr, pos))
     return m
 
 def get_panel_variants(args, d, keep_rsids=False):
     logging.info("Creating index to attach reference ids")
     index = {}
     for t in d.itertuples():
-        if not t.chromosome in index: index[t.chromosome] = set()
-        index[t.chromosome].add(t.position)
+        if not getattr(t, 'chromosome', None) in index:  # changed from t.chr to t.chromosome
+            index[getattr(t, 'chromosome')] = set()  # consistent change throughout
+        index[getattr(t, 'chromosome')].add(t.position)   
 
     logging.info("Acquiring reference metadata")
     _snp = args.snp_reference_metadata
@@ -156,8 +151,9 @@ def get_panel_variants(args, d, keep_rsids=False):
     elif len(_snp) == 2:
         if _snp[1] == "METADATA":
             m = _get_metadata(_snp[0], index)
-    m = pandas.DataFrame(m, columns=["panel_variant_id", "chromosome", "position", "non_effect_allele", "effect_allele", "frequency"])
+    m = pandas.DataFrame(m, columns=["panel_variant_id", "chromosome", "position"])
     return m
+
 
 def filled_frequency(d, m):
     has_freq = "frequency" in d
@@ -240,7 +236,6 @@ def fill_from_metadata(args, d):
     return d
 
 def clean_up(d):
-    d = d.assign(sample_size=[int(x) if not math.isnan(x) else "NA" for x in d.sample_size])
     if "chromosome" in d.columns.values and "position" in d.columns.values:
         d = Genomics.sort(d)
     return d

@@ -1,0 +1,25 @@
+import csv
+import gzip
+
+def process_file(input_path, output_path):
+    # Define the header line to be added
+    header = ["chromosome", "name", "start"]
+
+    with gzip.open(input_path, 'rt') as f_input, gzip.open(output_path, 'wt') as f_output:
+        reader = csv.reader(f_input, delimiter='\t')
+        writer = csv.writer(f_output, delimiter='\t')
+
+        # Write the header
+        writer.writerow(header)
+
+        # Process each line
+        for line in reader:
+            # Switch the second (index 1) and third (index 2) columns
+            line[1], line[2] = line[2], line[1]
+            # Write the modified line
+            writer.writerow(line)
+
+# Example usage
+input_file = '/Users/katherinetian/Downloads/snp150Common_GRCh37.txt.gz'
+output_file = '/Users/katherinetian/Downloads/GRCh37_adjusted.txt.gz'
+process_file(input_file, output_file)

@@ -40,24 +40,25 @@ def pre_process_gwas(args, d):
         for s in args.split_column:
             d = PandasHelpers.split_column(d, s)
         if "position" in d:
-            d = d.assign(position = d.position.astype(int))
+            d = d.assign(position=d.position.astype(int))
 
     if args.insert_value:
         for spec in args.insert_value:
             d = insert_value(d, spec)
 
-    # Some GWAs have NA's in fre
-    if "frequency" in d:
-        d["frequency"] = Genomics.to_number(d.frequency)
+    # Check if 'frequency' column exists before attempting to use it
+    if "frequency" in d.columns:
+        d["frequency"] = Genomics.to_number(d["frequency"])
 
-    if "n_controls" in d:
-        if "n_cases" in d:
-            logging.info("Adding up to sample size")
-            d["sample_size"] = d.n_cases + d.n_controls
-        elif "sample_size" in d:
-            logging.info("difference to cases")
-            d["n_cases"] = d.sample_size - d.n_controls
+    if "n_controls" in d and "n_cases" in d:
+        logging.info("Adding up to sample size")
+        d["sample_size"] = d.n_cases + d.n_controls
+    elif "n_controls" in d and "sample_size" in d:
+        logging.info("difference to cases")
+        d["n_cases"] = d.sample_size - d.n_controls
+
     return d
+
 
 def metadata_white_list(black_list_path, column, variants):
     w = {x for x in variants}
@@ -156,17 +157,19 @@ def get_panel_variants(args, d, keep_rsids=False):
 
 
 def filled_frequency(d, m):
-    has_freq = "frequency" in d
+    if "frequency" not in d.columns:
+        return None  # or you could return an empty list or a default value if needed
 
-    t = {x.panel_variant_id:x.frequency for x in m.itertuples()}
+    t = {x.panel_variant_id: x.frequency for x in m.itertuples() if 'frequency' in x}
     f = []
     for e in d.itertuples():
-        _f = e.frequency if has_freq else None
+        _f = e.frequency if hasattr(e, 'frequency') else None
         if _f is None or numpy.isnan(_f):
             if e.panel_variant_id in t:
                 _f = t[e.panel_variant_id]
         f.append(_f)
     return f
+
 
 def _ensure_uniqueness(d):
     top_ = d[["panel_variant_id", "zscore", "variant_id"]].assign(absz = numpy.abs(d.zscore)).drop(["zscore"], axis=1)
@@ -216,24 +219,27 @@ def ensure_uniqueness(d):
 
 def fill_from_metadata(args, d):
     m = get_panel_variants(args, d)
-    if "panel_variant_id" in d: d= d.drop(["panel_variant_id"])
+    if "panel_variant_id" in d.columns:
+        d = d.drop(columns=["panel_variant_id"])
 
-    logging.info("alligning alleles")
-
+    logging.info("aligning alleles")
     d = Genomics.match(d, m)
 
     if not args.keep_all_original_entries:
         d = d.loc[~d.panel_variant_id.isna()]
         logging.info("%d variants after restricting to reference variants", d.shape[0])
 
-        logging.info("Ensuring variant uniqueness")
-        d = ensure_uniqueness(d)
-        logging.info("%d variants after ensuring uniqueness", d.shape[0])
+    logging.info("Ensuring variant uniqueness")
+    d = ensure_uniqueness(d)
+    logging.info("%d variants after ensuring uniqueness", d.shape[0])
 
-    logging.info("Checking for missing frequency entries")
-    d["frequency"] = filled_frequency(d, m)
+    # Check if frequency handling is necessary
+    freqs = filled_frequency(d, m)
+    if freqs is not None:
+        d["frequency"] = freqs
 
     return d
+
 
 def clean_up(d):
     if "chromosome" in d.columns.values and "position" in d.columns.values:

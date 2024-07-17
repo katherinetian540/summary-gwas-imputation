@@ -4,7 +4,7 @@ import logging
 import pandas
 import pyarrow as pa
 import pyarrow.parquet as pq
-import numpy
+import numpy as np
 
 from ..individual_data import Study, Genotype
 from ..DataSink import DataFrameSink
@@ -191,26 +191,35 @@ def get_snps_data(annotation_row, window, snp_metadata, snp_file, specific_indiv
     features_in_window = Genomics.entries_for_gene_annotation(annotation_row, window, snp_metadata)
     return features_in_window, _read(snp_file, [x for x in features_in_window.id.values], to_pandas=to_pandas, specific_individuals=specific_individuals)
 
-def _read(file, columns=None, skip_individuals=False, to_pandas=False, specific_individuals=None):
-    if columns is None:
-        columns = file.schema.names
-    if not skip_individuals:
-        columns = ["individual"]+[x for x in columns]
-    if skip_individuals and specific_individuals is not None:
-            raise RuntimeError("Unsupported combination")
-    v = file.read(columns=columns)
-    if to_pandas:
-        v = v.to_pandas()
-        if specific_individuals is not None:
-            indexes = set(specific_individuals)
-            v = v.loc[v.individual.isin(indexes)]
-    else:
-        if specific_individuals:
-            mask = _individual_mask(v.column(0).to_pylist(), specific_individuals)
+# def _read(file, columns=None, skip_individuals=False, to_pandas=False, specific_individuals=None):
+#     if columns is None:
+#         columns = file.schema.names
+#     if not skip_individuals:
+#         columns = ["individual"]+[x for x in columns]
+#     if skip_individuals and specific_individuals is not None:
+#             raise RuntimeError("Unsupported combination")
+#     v = file.read(columns=columns)
+#     if to_pandas:
+#         v = v.to_pandas()
+#         if specific_individuals is not None:
+#             indexes = set(specific_individuals)
+#             v = v.loc[v.individual.isin(indexes)]
+#     else:
+#         if specific_individuals:
+#             mask = _individual_mask(v.column(0).to_pylist(), specific_individuals)
 
-        v = {c.name:(numpy.array(c.to_pylist(), dtype=numpy.float32) if c.name != "individual" else numpy.array(c.to_pylist(), dtype=numpy.str)) for c in v}
-        if specific_individuals:
-            v = {k:d[mask] for k,d in v.items()}
+#         v = {c.name:(numpy.array(c.to_pylist(), dtype=numpy.float32) if c.name != "individual" else numpy.array(c.to_pylist(), dtype=numpy.str)) for c in v}
+#         if specific_individuals:
+#             v = {k:d[mask] for k,d in v.items()}
+#     return v
+
+
+def _read(dataset, columns=None, specific_individuals=None, skip_individuals=False):
+    table = dataset.read(columns=columns)
+
+    # Convert to dictionary of NumPy arrays
+    v = {field.name: np.array(table.column(field.name).to_pylist(), dtype=np.float32) for field in table.schema}
+    
     return v
 
 def study_from_parquet(variants, variants_metadata, pheno=None, covariates=None, post_process_variants_metadata=None, chromosome=None, frequency_filter=None):
